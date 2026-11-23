@@ -21,3 +21,4 @@ backend/media/
 .idea/
 .DS_Store
 Thumbs.db
+backend/db.sqlite3
