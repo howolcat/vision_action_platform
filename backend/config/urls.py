@@ -1,22 +1,28 @@
 """
-URL configuration for config project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/6.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+config/urls.py: 전체 URL 연결
+==================================================
+/admin/            Django Admin (관리자)
+/accounts/...      회원가입·로그인·로그아웃
+/                  분석 화면 (analyses.urls)
+/analyses/<id>/    분석 상세 화면
+/dashboard/        관리자 전용 대시보드
+/api/analyses/...  DRF API
 """
+
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
+
+admin.site.site_header = "Vision Action Platform 관리자"
+admin.site.site_title = "Vision Action Admin"
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path("admin/", admin.site.urls),
+    path("accounts/", include("accounts.urls")),
+    path("", include("analyses.urls")),
 ]
+
+# 개발 모드(DEBUG=1)에서만 업로드 영상을 Django가 직접 제공합니다.
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

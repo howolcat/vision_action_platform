@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}동작 분석 · Vision Action Platform{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>동작 분석</h1>
+    <p class="muted">영상을 올리거나 IP Webcam으로 짧게 촬영하면, 사람마다 6개 동작 중 무엇에 가까운지 예측합니다.</p>
+  </div>
+</div>
+
+<div class="grid-2">
+  <!-- ① 입력 -->
+  <section class="card">
+    <h2 class="card-title"><span class="step-no">1</span>입력 방식 선택</h2>
+
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab active" data-input="UPLOAD" role="tab" aria-selected="true">영상 업로드</button>
+      <button type="button" class="tab" data-input="WEBCAM" role="tab" aria-selected="false">IP Webcam</button>
+    </div>
+
+    <form id="analysis-form" class="form" novalidate>
+      <input type="hidden" name="input_type" value="UPLOAD">
+
+      <!-- 영상 업로드 -->
+      <div class="tab-panel" data-panel="UPLOAD">
+        <label class="dropzone" id="dropzone">
+          <input type="file" name="video" accept="{{ allowed_extensions }}" hidden>
+          <strong>MP4 파일 선택</strong>
+          <span class="muted">또는 여기에 끌어다 놓기 · 최대 {{ max_upload_mb }}MB · {{ allowed_extensions }}</span>
+          <span class="file-name" id="file-name"></span>
+        </label>
+        <video id="preview" class="preview" controls muted hidden></video>
+      </div>
+
+      <!-- IP Webcam -->
+      <div class="tab-panel" data-panel="WEBCAM" hidden>
+        {% if camera_names %}
+          <label class="field">
+            <span>카메라</span>
+            <select name="camera_name">
+              {% for name in camera_names %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span>수집 시간(초)</span>
+            <input type="number" name="capture_seconds" min="{{ capture_min }}" max="{{ capture_max }}" value="{{ capture_seconds }}">
+          </label>
+          <div class="callout">
+            <strong>어떻게 촬영되나요?</strong>
+            <span>‘AI 분석 시작’을 누르면 서버가 카메라에 연결해 <b data-seconds-text>{{ capture_seconds }}</b>초 동안 화면을 모읍니다.
+            그동안 카메라 앞에서 동작을 해 주세요. 연결과 AI 추론 시간은 따로 걸립니다.</span>
+          </div>
+        {% else %}
+          <div class="callout callout-warn">
+            <strong>등록된 카메라가 없습니다.</strong>
+            <span>관리자가 서버 환경변수 <code>IP_WEBCAM_SOURCES</code>에 수업에서 허용한 카메라를 등록해야 사용할 수 있어요.</span>
+          </div>
+        {% endif %}
+      </div>
+
+      <label class="field">
+        <span>실제로 한 동작 <small class="muted">(선택)</small></span>
+        <select name="expected_action">
+          <option value="">선택 안 함</option>
+          {% for value, label in action_choices %}<option value="{{ value }}">{{ label }} ({{ value }})</option>{% endfor %}
+        </select>
+        <small class="hint">비교용 메모예요. 검증된 정답으로 쓰이지 않습니다.</small>
+      </label>
+
+      <label class="field">
+        <span>제목 <small class="muted">(비우면 자동)</small></span>
+        <input type="text" name="title" maxlength="100" placeholder="예: 손 흔들기 1차">
+      </label>
+
+      <div id="form-errors" class="alert alert-error" hidden></div>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" id="start-button">AI 분석 시작</button>
+    </form>
+  </section>
+
+  <!-- ② 진행 상태와 결과 -->
+  <section class="card" id="job-card">
+    <h2 class="card-title"><span class="step-no">2</span>진행 상태와 결과</h2>
+
+    <div id="job-empty" class="empty">
+      <p>아직 진행 중인 분석이 없습니다.</p>
+      <p class="muted">왼쪽에서 입력을 고르고 ‘AI 분석 시작’을 눌러 주세요.</p>
+    </div>
+
+    <div id="job-view" hidden>
+      <div class="job-meta">
+        <span>작업 <b id="job-id">-</b></span>
+        <span class="muted" id="job-title"></span>
+        <span class="muted mono" id="job-elapsed"></span>
+      </div>
+
+      <ol class="stepper" id="stepper">
+        <li data-step="PENDING"><span class="dot"></span>대기</li>
+        <li data-step="STARTED"><span class="dot"></span>처리 중</li>
+        <li data-step="DONE"><span class="dot"></span><span id="done-label">완료</span></li>
+      </ol>
+      <p class="status-hint muted" id="status-hint"></p>
+
+      <div id="job-error" class="alert alert-error" hidden></div>
+      <div id="job-message" class="alert alert-info" hidden></div>
+
+      <div id="result-wrap" hidden>
+        <table class="table">
+          <thead><tr><th>Track ID</th><th>예측 동작</th><th>Confidence</th><th>유효 Frame</th></tr></thead>
+          <tbody id="result-body"></tbody>
+        </table>
+        <p class="note">예측 Label은 정답이나 위험행동 판정이 아닙니다. Confidence {{ uncertain_threshold }} 미만은 <span class="badge badge-warn">판단 불확실</span>로 표시해요.</p>
+        <a id="detail-link" class="btn btn-ghost btn-sm" href="#">상세 결과 보기 →</a>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ③ 최근 이력 -->
+<section class="card">
+  <h2 class="card-title"><span class="step-no">3</span>최근 분석 이력</h2>
+  <div class="table-scroll">
+    <table class="table">
+      <thead><tr><th>#</th><th>제목</th><th>입력</th><th>실제 동작</th><th>상태</th><th>사람 수</th><th>요청 시각</th><th></th></tr></thead>
+      <tbody id="recent-body">
+        {% for job in recent_jobs %}
+          <tr>
+            <td class="mono">{{ job.id }}</td>
+            <td>{{ job.title }}</td>
+            <td>{{ job.get_input_type_display }}</td>
+            <td>{{ job.get_expected_action_display|default:"-" }}</td>
+            <td><span class="badge status-{{ job.status }}">{{ job.get_status_display }}</span></td>
+            <td>{{ job.people }}</td>
+            <td class="muted">{{ job.created_at|date:"m-d H:i" }}</td>
+            <td><a href="{% url 'analyses:detail' job.id %}">상세</a></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="8" class="muted center">아직 분석 기록이 없습니다.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{{ uncertain_threshold|json_script:"uncertain-threshold" }}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/analyses.js' %}"></script>
+{% endblock %}

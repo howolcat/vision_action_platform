@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% load static l10n %}
+{% block title %}분석 #{{ job.id }} · Vision Action Platform{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <a href="{% url 'analyses:index' %}" class="muted">← 분석 화면</a>
+    <h1>분석 #{{ job.id }} <span class="badge status-{{ job.status }}">{{ job.get_status_display }}</span></h1>
+  </div>
+</div>
+
+<div class="grid-2">
+  <section class="card">
+    <h2 class="card-title">요청 정보</h2>
+    <dl class="info">
+      <dt>입력 방식</dt><dd>{{ job.get_input_type_display }}{% if job.camera_name %} · {{ job.camera_name }} · {{ job.capture_seconds }}초{% endif %}</dd>
+      <dt>실제로 한 동작</dt><dd>{{ job.get_expected_action_display|default:"선택 안 함" }}</dd>
+      <dt>요청 시각</dt><dd>{{ job.created_at|date:"Y-m-d H:i:s" }}</dd>
+      <dt>완료 시각</dt><dd>{{ job.completed_at|date:"Y-m-d H:i:s"|default:"-" }}</dd>
+      <dt>추론 시간</dt><dd>{% if job.processing_ms %}{{ job.processing_ms }} ms{% else %}-{% endif %}</dd>
+      <dt>영상 Frame</dt><dd>{{ job.video_frames|default:"-" }}</dd>
+      <dt>Celery task</dt><dd class="mono small">{{ job.celery_task_id|default:"-" }}</dd>
+    </dl>
+    {% if job.error_message %}<div class="alert alert-error">{{ job.error_message }}</div>{% endif %}
+    {% if job.result_message %}<div class="alert alert-info">{{ job.result_message }}</div>{% endif %}
+    {% if job.video %}<video class="preview" src="{{ job.video.url }}" controls muted></video>{% endif %}
+  </section>
+
+  <section class="card">
+    <h2 class="card-title">제목·메모 수정</h2>
+    <form id="edit-form" class="form" data-job-id="{{ job.id }}">
+      <label class="field"><span>제목</span><input type="text" name="title" maxlength="100" value="{{ job.title }}" required></label>
+      <label class="field"><span>메모</span><textarea name="memo" rows="4">{{ job.memo }}</textarea></label>
+      <p class="hint">상태와 AI 예측값은 수정할 수 없습니다.</p>
+      <div class="row-between">
+        <button type="submit" class="btn btn-primary">저장</button>
+        <button type="button" class="btn btn-danger-ghost" id="delete-button">이 분석 삭제</button>
+      </div>
+      <div id="edit-result" class="alert" hidden></div>
+    </form>
+  </section>
+</div>
+
+<section class="card">
+  <h2 class="card-title">사람별 예측</h2>
+  {% for p, probs in people %}
+    <div class="person">
+      <div class="person-head">
+        <span class="track">Track {{ p.track_id }}</span>
+        <strong>{{ p.get_action_label_display }}</strong> <span class="muted mono">{{ p.action_label }}</span>
+        {% if p.is_uncertain %}<span class="badge badge-warn">판단 불확실</span>{% endif %}
+        {% if job.expected_action %}
+          {% if job.expected_action == p.action_label %}<span class="badge badge-ok">선택한 동작과 같음</span>
+          {% else %}<span class="badge badge-neutral">선택한 동작과 다름</span>{% endif %}
+        {% endif %}
+        <span class="muted">유효 Frame {{ p.valid_frames }}</span>
+      </div>
+      <div class="prob-list">
+        {% for label, display, value, percent in probs %}
+          <div class="prob-row {% if label == p.action_label %}is-top{% endif %}">
+            <span class="prob-name">{{ display }}</span>
+            <span class="prob-bar"><span style="width: {{ percent|unlocalize }}%"></span></span>
+            <span class="prob-value mono">{{ value|floatformat:3 }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% empty %}
+    <p class="muted">저장된 사람별 예측이 없습니다.</p>
+  {% endfor %}
+  <p class="note">원래 학습 데이터가 1명 × 6개 동작으로 매우 적어, 새 사람·새 환경에서는 틀릴 수 있습니다. 틀렸다면 입력 품질 → Pose → Feature → Window → 모델 순서로 원인을 찾아보세요.</p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'js/analyses.js' %}"></script>
+{% endblock %}

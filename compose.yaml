@@ -1,0 +1,103 @@
+# ==================================================
+# Vision Action Platform: 5개 서비스
+#   postgres  영구 DB (Django ORM만 접근)
+#   redis     Celery 작업 대기열 + 작업 상태
+#   fastapi   AI 추론 서버 (DB 접근 없음)
+#   django    화면·API·회원·ORM
+#   celery    비동기 작업: 영상 확보 → FastAPI 호출 → ORM 저장
+#
+# Docker 자체는 서비스가 아니라 이 5개를 실행하는 환경입니다.
+# 서비스끼리는 localhost가 아니라 "서비스 이름"으로 통신합니다. (예: http://fastapi:8000)
+# ==================================================
+name: vision_action_platform
+
+# django와 celery가 똑같이 쓰는 설정 (YAML anchor로 한 번만 작성)
+x-backend: &backend
+  build: ./backend
+  image: vision-action-backend
+  env_file: .env
+  environment:
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
+    FASTAPI_URL: http://fastapi:8000
+    DJANGO_MEDIA_ROOT: /app/media
+  volumes:
+    - media_data:/app/media        # django가 저장한 업로드 영상을 celery도 읽을 수 있게 공유
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data   # 컨테이너를 지워도 DB 데이터 유지
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  fastapi:
+    build: ./ai_service
+    image: vision-action-ai
+    environment:
+      MODEL_DIR: /app/models
+      UNCERTAIN_THRESHOLD: ${UNCERTAIN_THRESHOLD:-0.4}
+      MAX_FRAMES: ${MAX_FRAMES:-1800}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+    volumes:
+      - ./ai_service/models:/app/models:ro       # 모델 파일은 Git이 아닌 로컬 폴더에서 읽기 전용으로 연결
+    ports:
+      - "8001:8000"   # 개발 중 http://localhost:8001/docs 확인용 (django만 공개하려면 이 두 줄 삭제)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  django:
+    <<: *backend
+    # 시작할 때 마이그레이션을 적용하고 개발 서버 실행
+    command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
+    ports:
+      - "8000:8000"   # 브라우저 접속: http://localhost:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery:
+    <<: *backend
+    # concurrency=1: CPU 추론이 무거우므로 한 번에 한 작업씩 처리
+    command: celery -A config worker -l info --concurrency=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      fastapi:
+        condition: service_healthy
+      django:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  media_data:

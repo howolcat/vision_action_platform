@@ -1,11 +1,17 @@
-asgiref==3.13.0
-certifi==2026.11.20
-charset-normalizer==3.5.3
+# ==================================================
+# Django 웹 서버 + Celery Worker가 함께 쓰는 패키지
+# (두 서비스는 같은 Docker 이미지를 사용합니다)
+# ==================================================
 Django==6.1.3
 djangorestframework==3.18.3
-idna==3.20
-psycopg==3.3.9
-psycopg-binary==3.3.9
+psycopg[binary]==3.3.9        # PostgreSQL 드라이버
+
+# 비동기 작업: Celery + Redis 브로커 클라이언트
+celery[redis]==5.7.0
+
+# Celery Worker → FastAPI 영상 전송
 requests==2.34.2
-sqlparse==0.6.1
-urllib3==2.8.0
+
+# Celery Worker의 IP Webcam 수집 (화면 없는 서버용 headless 버전)
+opencv-python-headless==5.0.0.93
+numpy

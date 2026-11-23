@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}회원가입 · Vision Action Platform{% endblock %}
+{% block content %}
+<section class="auth-card card">
+  <h1>회원가입</h1>
+  <p class="muted">가입하면 바로 로그인되고 분석 화면으로 이동합니다.</p>
+
+  <form method="post" class="form" novalidate>
+    {% csrf_token %}
+    {% for field in form %}
+      <label class="field {% if field.errors %}has-error{% endif %}">
+        <span>{{ field.label }}</span>
+        {{ field }}
+        {% for error in field.errors %}<small class="field-error">{{ error }}</small>{% endfor %}
+        {% if field.name == 'password1' %}<small class="hint">8자 이상, 아이디와 비슷하지 않게, 숫자만으로는 안 돼요.</small>{% endif %}
+      </label>
+    {% endfor %}
+    {% for error in form.non_field_errors %}<div class="alert alert-error">{{ error }}</div>{% endfor %}
+    <button type="submit" class="btn btn-primary btn-block">가입하기</button>
+  </form>
+  <p class="auth-switch">이미 계정이 있나요? <a href="{% url 'login' %}">로그인</a></p>
+</section>
+{% endblock %}
