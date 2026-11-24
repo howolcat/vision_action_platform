@@ -328,13 +328,26 @@ sequenceDiagram
 
 ## 7. 실행 결과와 검증
 
-> 📸 캡처는 `docs/images/`에 저장하고 아래 표의 자리에 넣으세요.
+### 정상 분석
+IP Webcam 8초 수집(259 Frame) → Track 1: `wave`(선택한 동작과 같음), Confidence 0.347로 "판단 불확실" 표시. 수집한 영상을 상세 화면에서 다시 재생할 수 있고, 제목·메모 수정(PATCH)도 저장됨
 
-| 사례 | 입력 | 결과 | 캡처 |
-|---|---|---|---|
-| 정상 분석 | `wave.mp4` (126 Frame, 25fps, 1명) | Track 1 → `wave`, Confidence 0.637, 4.5초 | `docs/images/result_success.png` |
-| 오류·실패 | 손상된 mp4 / 카메라 꺼짐 | FAILURE, "영상을 열 수 없습니다" / "카메라에 연결할 수 없습니다" | `docs/images/result_failure.png` |
-| 관리자 | 관리자 계정 | Admin 작업 목록 + 대시보드 차트 2개 | `docs/images/admin.png`, `docs/images/dashboard.png` |
+![정상 분석](docs/images/result_success.png)
+
+### 오류·실패
+AI 서버(FastAPI)가 꺼진 상태에서 `wave.mp4` 업로드 → 작업은 멈추지 않고 FAILURE로 끝나며 "AI 서버에 연결할 수 없습니다" 메시지를 DB에 저장
+
+![실패 사례](docs/images/result_failure.png)
+
+### 관리자 (Django Admin · 대시보드)
+관리자 계정으로 전체 작업 목록(상태·입력 방식·동작·날짜 필터, 사용자 검색)과 Chart.js 차트 2개(동작별 예측 건수, 작업 상태별 건수) 확인
+
+![Django Admin 작업 목록](docs/images/admin.png)
+
+![관리자 대시보드](docs/images/dashboard.png)
+
+일반 회원이 `/admin/`에 접근하면 차단됨 (T08 권한 분리)
+
+<img src="docs/images/admin_denied.png" alt="일반 회원 Admin 접근 차단" width="320">
 
 ### 기능 테스트 체크리스트
 
@@ -342,7 +355,7 @@ sequenceDiagram
 |---|---|---|
 | T01 모델 불러오기 | `GET /health` → 6 Class, 1,140 Feature | ✅ |
 | T02 영상 업로드 | `wave.mp4` 업로드 → 결과 | ✅ |
-| T03 IP Webcam | 휴대폰 카메라 앞에서 동작 → 결과 | ⬜ 시연 전 확인 |
+| T03 IP Webcam | 휴대폰 카메라 앞에서 동작 → 결과 | ✅ (8초·259 Frame, wave) |
 | T04 사람별 결과 | 2명 영상 → Track별 2건 | ✅ (자동 테스트) |
 | T05 비동기 처리 | 요청 직후 202 + 작업 ID | ✅ (자동 테스트) |
 | T06 영구 저장 | 완료 후 새로고침 → 결과 유지 | ✅ |
