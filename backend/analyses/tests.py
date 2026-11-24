@@ -232,3 +232,48 @@ class PageTests(TestCase):
         self.client.force_login(superuser)
         self.assertContains(self.client.get("/admin/analyses/analysisjob/"), "관리 확인")
         self.assertEqual(self.client.get("/admin/analyses/personprediction/").status_code, 200)
+
+
+# ---------- IP Webcam 실시간 미리보기 (Django가 MJPEG 중계) ----------
+@override_settings(IP_WEBCAM_SOURCES={"phone1": "http://192.0.2.10:8080/video"})
+class CameraPreviewTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("viewer", password="pw-V-2026!")
+        self.url = reverse("analyses:camera-preview", args=["phone1"])
+
+    def test_requires_login(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 302)
+
+    def test_unknown_camera_is_404(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("analyses:camera-preview", args=["unknown"]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_relays_camera_stream_without_exposing_url(self):
+        upstream = mock.MagicMock()
+        upstream.headers = {"Content-Type": "multipart/x-mixed-replace;boundary=frame"}
+        upstream.iter_content.return_value = [b"--frame\r\n", b"\xff\xd8jpeg\xff\xd9\r\n"]
+        self.client.force_login(self.user)
+        with mock.patch("analyses.camera_preview.requests.Session.get", return_value=upstream) as get:
+            response = self.client.get(self.url)
+            body = b"".join(response.streaming_content)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response["Content-Type"].startswith("multipart/x-mixed-replace"))
+        self.assertIn(b"jpeg", body)
+        get.assert_called_once()
+        self.assertEqual(get.call_args.args[0], "http://192.0.2.10:8080/video")   # 서버만 실제 주소를 앎
+        upstream.close.assert_called_once()                                   # 끝나면 카메라 연결 정리
+
+    def test_camera_down_returns_502(self):
+        import requests as http
+        self.client.force_login(self.user)
+        with mock.patch("analyses.camera_preview.requests.Session.get", side_effect=http.ConnectionError()):
+            response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 502)
+
+    def test_index_page_never_contains_camera_url(self):
+        self.client.force_login(self.user)
+        html = self.client.get(reverse("analyses:index")).content.decode()
+        self.assertIn('id="camera-preview"', html)
+        self.assertNotIn("192.0.2.10", html)

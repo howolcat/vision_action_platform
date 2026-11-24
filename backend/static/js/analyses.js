@@ -63,6 +63,8 @@ function initIndexPage() {
         panel.hidden = panel.dataset.panel !== tab.dataset.input;
       });
       formErrors.hidden = true;
+      // IP Webcam 탭일 때만 미리보기 연결 (다른 탭에서는 연결을 끊어 서버·카메라 부담 줄이기)
+      if (tab.dataset.input === "WEBCAM") cam.show(); else cam.hide();
     });
   });
 
@@ -97,6 +99,99 @@ function initIndexPage() {
     });
   }
 
+  // ---------- IP Webcam 실시간 미리보기 + REC 카운트다운 ----------
+  // <img src="/cameras/이름/preview/"> 하나로 MJPEG 영상이 계속 갱신됩니다. (Django가 카메라 영상을 중계)
+  const isEager = JSON.parse(document.getElementById("is-eager").textContent);
+  const cam = (() => {
+    const img = document.getElementById("camera-preview");
+    const noop = () => {};
+    if (!img) return { show: noop, hide: noop, startRec: noop, stopRec: noop };   // 등록된 카메라가 없을 때
+
+    const box = document.getElementById("cam-preview");
+    const statusText = document.getElementById("preview-status");
+    const liveBadge = document.getElementById("cam-live");
+    const recBadge = document.getElementById("rec-badge");
+    const recDot = document.getElementById("rec-dot");
+    const recLabel = document.getElementById("rec-label");
+    const recSeconds = document.getElementById("rec-seconds");
+    const select = form.querySelector('select[name="camera_name"]');
+    const RECONNECT_MS = 280 * 1000;   // 서버가 300초 뒤 중계를 끊기 전에 미리 다시 연결
+    let active = false;
+    let reconnectTimer = null;
+    let recTimer = null;
+
+    function connect() {
+      statusText.textContent = "카메라 연결 중…";
+      statusText.hidden = false;
+      liveBadge.hidden = true;
+      // ?t= : 매번 새 주소로 만들어 브라우저가 예전 연결을 재사용하지 않게
+      img.src = `/cameras/${encodeURIComponent(select.value)}/preview/?t=${Date.now()}`;
+    }
+    function disconnect() {
+      clearInterval(reconnectTimer);
+      img.removeAttribute("src");   // src를 지우면 브라우저가 스트림 연결을 끊음
+      liveBadge.hidden = true;
+    }
+
+    img.addEventListener("load", () => { statusText.hidden = true; liveBadge.hidden = false; });
+    img.addEventListener("error", () => {
+      if (!active) return;
+      disconnect();
+      statusText.hidden = false;
+      statusText.textContent = "미리보기를 불러올 수 없습니다. 휴대폰의 IP Webcam 서버와 같은 Wi-Fi인지 확인하세요.";
+    });
+    select.addEventListener("change", () => { if (active) show(); });
+    // 브라우저 탭을 다른 곳으로 옮기면 잠시 끊고, 돌아오면 다시 연결
+    document.addEventListener("visibilitychange", () => {
+      if (!active) return;
+      if (document.hidden) disconnect(); else show();
+    });
+
+    function show() {
+      active = true;
+      disconnect();
+      connect();
+      reconnectTimer = setInterval(connect, RECONNECT_MS);
+    }
+    function hide() {
+      active = false;
+      disconnect();
+    }
+
+    // 서버가 영상을 모으는 동안 "● REC 8 → 7 → …" 표시
+    function startRec() {
+      if (recTimer) return;
+      let left = Number(secondsInput.value) || 8;
+      // 버튼이 화면 아래쪽에 있으니, 촬영이 시작되면 미리보기가 보이도록 화면을 올려 줌
+      box.scrollIntoView({ behavior: "smooth", block: "center" });
+      box.classList.add("recording");
+      recBadge.hidden = false;
+      recDot.hidden = false;
+      recLabel.textContent = "REC";
+      recSeconds.textContent = left;
+      recTimer = setInterval(() => {
+        left -= 1;
+        if (left > 0) {
+          recSeconds.textContent = left;
+        } else {
+          clearInterval(recTimer);
+          box.classList.remove("recording");
+          recDot.hidden = true;
+          recLabel.textContent = "수집 완료 · AI 분석 중";
+          recSeconds.textContent = "";
+        }
+      }, 1000);
+    }
+    function stopRec() {
+      clearInterval(recTimer);
+      recTimer = null;
+      recBadge.hidden = true;
+      box.classList.remove("recording");
+    }
+
+    return { show, hide, startRec, stopRec };
+  })();
+
   // ---------- 진행 상태 표시 ----------
   const stepper = document.getElementById("stepper");
   function renderStatus(status, inputType) {
@@ -120,6 +215,10 @@ function initIndexPage() {
       FAILURE: "분석에 실패했습니다.",
     };
     document.getElementById("status-hint").textContent = hints[status] || "";
+
+    // Celery 모드: Worker가 작업을 시작(STARTED)하는 순간부터 카메라 수집이 시작됨
+    if (inputType === "WEBCAM" && status === "STARTED") cam.startRec();
+    if (status === "SUCCESS" || status === "FAILURE") cam.stopRec();
   }
 
   function renderPredictions(job) {
@@ -222,8 +321,15 @@ function initIndexPage() {
     startButton.disabled = true;
     startButton.textContent = inputType === "UPLOAD" ? "업로드 중…" : "요청 중…";
 
+    // 로컬 즉시 실행 모드(CELERY_TASK_ALWAYS_EAGER=1): 요청을 보내는 순간 서버가 바로 촬영을 시작
+    if (inputType === "WEBCAM" && isEager) {
+      startButton.textContent = "촬영·분석 중…";
+      cam.startRec();
+    }
+
     const { ok, data } = await api("/api/analyses/", { method: "POST", body: formData });
     if (!ok) {
+      cam.stopRec();
       stopTimers();
       formErrors.textContent = formatErrors(data);
       formErrors.hidden = false;

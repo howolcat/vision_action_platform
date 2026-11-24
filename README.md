@@ -15,7 +15,7 @@ YOLO Pose로 사람마다 관절을 추적하고 6일차 Random Forest로 **사�
 | 지원 입력 | 설명 |
 |---|---|
 | 영상 업로드 | 이미 촬영한 MP4(.mov/.avi/.mkv)를 올려 분석 |
-| IP Webcam | 서버(Celery Worker)가 등록된 카메라에 연결해 **8초**(5~10초 조절) 동안 수집한 영상을 분석 |
+| IP Webcam | 서버(Celery Worker)가 등록된 카메라에 연결해 **8초**(5~10초 조절) 동안 수집한 영상을 분석. 화면에서 **실시간 미리보기**와 **REC 카운트다운**으로 촬영 구도·시점 확인 |
 
 | ID | Action Label | 의미 |
 |---|---|---|
@@ -272,6 +272,7 @@ sequenceDiagram
 | 작업 생성, 커밋 후 등록, 상태 API | `backend/analyses/views.py` |
 | 영상 확보, 결과·실패 저장 | `backend/analyses/tasks.py` |
 | 웹캠 N초 수집 | `backend/analyses/camera_capture.py` |
+| 웹캠 실시간 미리보기 (MJPEG 중계, 주소 비노출) | `backend/analyses/camera_preview.py` |
 | FastAPI 호출, 타임아웃·오류 처리 | `backend/analyses/services.py` |
 | 추론 API | `ai_service/routers/predictions.py` |
 | 영상 → 사람별 Feature | `ai_service/services/pose_pipeline.py` |

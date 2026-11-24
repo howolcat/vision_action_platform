@@ -36,6 +36,8 @@ def index(request):
         "max_upload_mb": settings.MAX_UPLOAD_MB,
         "allowed_extensions": ",".join(settings.ALLOWED_VIDEO_EXTENSIONS),
         "uncertain_threshold": settings.UNCERTAIN_THRESHOLD,
+        # 로컬 즉시 실행 모드면 버튼을 누르는 순간 촬영 시작, Celery 모드면 "처리 중"이 될 때 시작
+        "is_eager": settings.CELERY_TASK_ALWAYS_EAGER,
     }
     return render(request, "analyses/index.html", context)
 

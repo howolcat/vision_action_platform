@@ -23,6 +23,8 @@
 }
 
 * { box-sizing: border-box; }
+/* hidden 속성이 붙은 요소는 display:flex 같은 다른 규칙보다 항상 우선해서 숨김 */
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.55; }
 a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -100,6 +102,18 @@ code, .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
 
 .tab-panel { display: flex; flex-direction: column; gap: 1rem; }
 .tab-panel[hidden] { display: none; }   /* display:flex가 hidden 속성을 덮어쓰지 않게 */
+/* ---------- IP Webcam 미리보기 ---------- */
+.cam-preview { position: relative; aspect-ratio: 4 / 3; background: #111827; border-radius: 10px; overflow: hidden; display: grid; place-items: center; }
+.cam-preview img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.cam-preview img:not([src]) { visibility: hidden; }
+.cam-status { position: relative; color: #cbd5e1; font-size: .85rem; text-align: center; padding: 0 1rem; }
+.cam-live { position: absolute; top: 10px; right: 10px; background: rgba(17, 24, 39, .7); color: #9ff0c4; font-size: .72rem; font-weight: 700; letter-spacing: .05em; padding: .15rem .5rem; border-radius: 5px; }
+.rec-badge { position: absolute; top: 10px; left: 10px; display: flex; align-items: center; gap: .4rem; background: rgba(196, 50, 43, .92); color: #fff; font-weight: 700; font-size: .9rem; padding: .3rem .7rem; border-radius: 6px; }
+.rec-badge b { font-family: ui-monospace, Consolas, monospace; min-width: 1.6em; }
+.rec-dot { width: 9px; height: 9px; border-radius: 50%; background: #fff; animation: blink 1s infinite; }
+.cam-preview.recording { box-shadow: 0 0 0 3px var(--error); }
+@keyframes blink { 50% { opacity: .2; } }
+
 .callout { display: flex; flex-direction: column; gap: .2rem; padding: .8rem 1rem; border-radius: 10px; background: var(--primary-soft); font-size: .88rem; }
 .callout-warn { background: var(--warn-soft); }
 

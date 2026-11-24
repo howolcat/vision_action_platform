@@ -36,6 +36,15 @@
       <!-- IP Webcam -->
       <div class="tab-panel" data-panel="WEBCAM" hidden>
         {% if camera_names %}
+          <!-- 실시간 미리보기: Django가 카메라 영상을 중계 (카메라 주소는 화면에 노출되지 않음) -->
+          <div class="cam-preview" id="cam-preview">
+            <img id="camera-preview" alt="카메라 실시간 미리보기">
+            <div class="cam-status" id="preview-status">카메라 연결 중…</div>
+            <div class="cam-live" id="cam-live" hidden>LIVE</div>
+            <div class="rec-badge" id="rec-badge" hidden><span class="rec-dot" id="rec-dot"></span><span id="rec-label">REC</span><b id="rec-seconds"></b></div>
+          </div>
+          <p class="hint">구도 확인용 화면이에요. 2~3m 떨어져서 머리부터 발까지 다 보이게 서 주세요.</p>
+
           <label class="field">
             <span>카메라</span>
             <select name="camera_name">
@@ -143,6 +152,7 @@
 </section>
 
 {{ uncertain_threshold|json_script:"uncertain-threshold" }}
+{{ is_eager|json_script:"is-eager" }}
 {% endblock %}
 
 {% block scripts %}
