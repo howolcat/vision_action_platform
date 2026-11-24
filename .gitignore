@@ -25,3 +25,6 @@ backend/db.sqlite3
 
 # Django collectstatic 결과
 backend/staticfiles/
+
+# run_local.sh 로그
+.logs/

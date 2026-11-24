@@ -80,6 +80,17 @@ docker compose down               # 종료 (데이터 유지) / down -v 는 DB�
 
 ### 2-3. 로컬 개발 실행 (Docker 없이)
 
+**한 번에 실행 (추천)**: 가상환경을 켜지 않아도 FastAPI와 Django가 같이 켜지고, `Ctrl+C` 한 번으로 둘 다 꺼집니다.
+
+```bash
+./run_local.sh
+# 가상환경 위치가 기본값(수업 폴더의 .venv, backend/.venv)과 다르면:
+AI_PY=/경로/.venv/bin/python WEB_PY=backend/.venv/bin/python ./run_local.sh
+```
+FastAPI 로그는 `.logs/fastapi.log`에 저장됩니다. `.env`의 `IP_WEBCAM_SOURCES`도 자동으로 읽습니다.
+
+**직접 실행**하려면:
+
 ```bash
 # 터미널 1: FastAPI (수업용 가상환경)
 cd ai_service && uvicorn main:app --reload --port 8001
