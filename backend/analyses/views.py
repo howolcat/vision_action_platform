@@ -7,6 +7,7 @@ GET    /api/analyses/{id}/          분석 상세 (사람별 결과 포함)
 PATCH  /api/analyses/{id}/          제목·메모만 수정
 DELETE /api/analyses/{id}/          삭제 (처리 중이면 거절, 영상 파일도 정리)
 GET    /api/analyses/{id}/status/   상태 조회 (브라우저 폴링용)
+GET    /api/analyses/comparison/    입력 방식 비교 (업로드 vs IP Webcam, 과제 9-1)
 """
 
 import logging
@@ -17,6 +18,7 @@ from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from .comparison import input_type_comparison
 from .models import AnalysisJob
 from .serializers import (
     AnalysisJobSerializer,
@@ -64,6 +66,11 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
         )
         logger.info("분석 작업 등록: job=%s task=%s type=%s", job.id, task_id, job.input_type)
 
+        # 로컬 즉시 실행 모드(CELERY_TASK_ALWAYS_EAGER=1)에서는 위 줄에서 분석이 이미 끝났을 수 있습니다.
+        # 저장 직후의 job은 PENDING 그대로라서, DB에서 다시 읽어 실제 상태로 응답합니다.
+        # (Celery 모드에서는 아직 PENDING이라 결과가 같음)
+        job.refresh_from_db()
+
         # 202 Accepted: "요청은 받았고, 처리는 나중에 끝납니다"
         return Response(AnalysisJobSerializer(job, context=self.get_serializer_context()).data,
                         status=status.HTTP_202_ACCEPTED)
@@ -90,6 +97,11 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
             job.video.delete(save=False)
         job.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=["get"], url_path="comparison")
+    def comparison(self, request):
+        """입력 방식별 비교: get_queryset()을 쓰므로 본인 작업만 집계됩니다."""
+        return Response(input_type_comparison(self.get_queryset()))
 
     # 함수 이름을 status로 지으면 위에서 import한 rest_framework.status와 헷갈리므로
     # 이름은 job_status, URL만 .../status/ 로 지정합니다.

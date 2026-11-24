@@ -84,6 +84,16 @@ class AnalysisJob(models.Model):
         # get_status_display(): "PENDING" 대신 "대기"처럼 화면용 이름을 돌려줌
         return f"#{self.pk} {self.title} ({self.get_status_display()})"
 
+    @property
+    def top_prediction(self):
+        """사람별 예측 중 Confidence가 가장 높은 1개 (비교 화면·이력 표의 "대표 예측"). 없으면 None
+
+        @property는 DB 칸이 아니라 "계산해서 보여 주는 값"이라 마이그레이션이 필요 없습니다.
+        prefetch_related("predictions")로 미리 불러왔다면 DB를 다시 조회하지 않습니다.
+        """
+        predictions = list(self.predictions.all())
+        return max(predictions, key=lambda p: p.confidence) if predictions else None
+
 
 # ==================================================
 # 작업 안의 사람 1명 결과 (영상에 2명이면 작업 1건에 2행)

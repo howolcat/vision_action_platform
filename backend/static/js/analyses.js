@@ -255,21 +255,46 @@ function initIndexPage() {
     message.textContent = job.result_message || "";
   }
 
+  const fmtMs = (ms) => (ms ? `${Number(ms).toLocaleString("ko-KR")} ms` : "-");
+  const fmtConf = (c) => (c === null || c === undefined ? "-" : Number(c).toFixed(2));
+
+  // ④ 최근 분석 이력 다시 그리기 (작업이 끝날 때마다)
   async function refreshRecent() {
     const { ok, data } = await api("/api/analyses/");
     if (!ok) return;
     const body = document.getElementById("recent-body");
     if (!data.length) return;
-    body.innerHTML = data.slice(0, 10).map((job) => `
+    body.innerHTML = data.slice(0, 10).map((job) => {
+      const top = job.top_prediction;   // 대표 예측 (Confidence가 가장 높은 사람)
+      return `
       <tr>
         <td class="mono">${job.id}</td>
         <td>${escapeHtml(job.title)}</td>
         <td>${escapeHtml(job.input_type_display)}</td>
         <td>${escapeHtml(job.expected_action_display || "-")}</td>
+        <td>${top ? escapeHtml(top.action_display) + (top.is_uncertain ? ' <span class="badge badge-warn">불확실</span>' : "") : "-"}</td>
+        <td class="mono">${top ? fmtConf(top.confidence) : "-"}</td>
+        <td>${fmtMs(job.processing_ms)}</td>
         <td><span class="badge status-${job.status}">${escapeHtml(job.status_display)}</span></td>
         <td>${job.predictions.length}</td>
         <td class="muted">${new Date(job.created_at).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</td>
         <td><a href="/analyses/${job.id}/">상세</a></td>
+      </tr>`;
+    }).join("");
+  }
+
+  // ③ 입력 방식 비교 다시 그리기 (계산은 서버 comparison.py가 하고, 여기서는 표만 그림)
+  async function refreshComparison() {
+    const { ok, data } = await api("/api/analyses/comparison/");
+    if (!ok) return;
+    document.getElementById("compare-body").innerHTML = data.map((row) => `
+      <tr>
+        <td><strong>${escapeHtml(row.input_type_display)}</strong></td>
+        <td>${row.total}건 <span class="muted">(${row.success} / ${row.failure})</span></td>
+        <td class="mono">${fmtConf(row.avg_confidence)}</td>
+        <td>${row.predicted ? `${row.uncertain} / ${row.predicted}` : "-"}</td>
+        <td>${fmtMs(row.avg_processing_ms)}</td>
+        <td>${row.expected_count ? `${row.matched} / ${row.expected_count}` : '<span class="muted">동작 선택 없음</span>'}</td>
       </tr>`).join("");
   }
 
@@ -306,6 +331,7 @@ function initIndexPage() {
         const detail = await api(`/api/analyses/${job.id}/`);
         if (detail.ok) renderPredictions(detail.data);
         refreshRecent();
+        refreshComparison();
       }
     }, POLL_MS);
   }

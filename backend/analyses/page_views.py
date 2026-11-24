@@ -15,18 +15,22 @@ from django.contrib.auth.decorators import login_required
 from django.db.models import Avg, Count
 from django.shortcuts import get_object_or_404, render
 
+from .comparison import input_type_comparison
 from .models import ActionLabel, AnalysisJob, PersonPrediction
 
 
 @login_required
 def index(request):
-    recent_jobs = (
+    # 내 작업 전체 (사람별 예측까지 한 번에 불러와서 대표 예측 계산 시 DB를 반복 조회하지 않게)
+    my_jobs = list(
         AnalysisJob.objects.filter(user=request.user)
-        .annotate(people=Count("predictions"))
-        .order_by("-created_at")[:10]
+        .prefetch_related("predictions")
+        .order_by("-created_at")
     )
     context = {
-        "recent_jobs": recent_jobs,
+        "recent_jobs": my_jobs[:10],
+        # 과제 9-1 비교 화면: 입력 방식별 건수·평균 Confidence·처리 시간·실제 동작 일치
+        "comparison": input_type_comparison(my_jobs),
         "action_choices": ActionLabel.choices,
         # 카메라 "이름"만 화면에 전달 (주소는 서버 밖으로 나가지 않음)
         "camera_names": list(settings.IP_WEBCAM_SOURCES.keys()),

@@ -45,6 +45,7 @@ class AnalysisJobSerializer(serializers.ModelSerializer):
     expected_action_display = serializers.CharField(source="get_expected_action_display", read_only=True)
     video_url = serializers.SerializerMethodField()
     is_finished = serializers.SerializerMethodField()
+    top_prediction = serializers.SerializerMethodField()   # 이력 표·비교용 대표 예측
     title = serializers.CharField(max_length=100, required=False, allow_blank=True)
 
     class Meta:
@@ -71,6 +72,7 @@ class AnalysisJobSerializer(serializers.ModelSerializer):
             "video_frames",
             "created_at",
             "completed_at",
+            "top_prediction",
             "predictions",
         ]
         # ⭐ 사용자가 보낼 수 없는(서버만 바꾸는) 값들
@@ -92,6 +94,18 @@ class AnalysisJobSerializer(serializers.ModelSerializer):
 
     def get_is_finished(self, job) -> bool:
         return job.status in (AnalysisJob.Status.SUCCESS, AnalysisJob.Status.FAILURE)
+
+    def get_top_prediction(self, job):
+        top = job.top_prediction
+        if top is None:
+            return None
+        return {
+            "track_id": top.track_id,
+            "action_label": top.action_label,
+            "action_display": top.get_action_label_display(),
+            "confidence": top.confidence,
+            "is_uncertain": top.is_uncertain,
+        }
 
     # ---------- 입력 검사 ----------
     def validate(self, attrs):

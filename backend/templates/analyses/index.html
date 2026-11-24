@@ -125,26 +125,54 @@
   </section>
 </div>
 
-<!-- ③ 최근 이력 -->
+<!-- ③ 입력 방식 비교 (과제 9-1) -->
 <section class="card">
-  <h2 class="card-title"><span class="step-no">3</span>최근 분석 이력</h2>
+  <h2 class="card-title"><span class="step-no">3</span>입력 방식 비교 <small class="muted">(내 분석 기준)</small></h2>
   <div class="table-scroll">
     <table class="table">
-      <thead><tr><th>#</th><th>제목</th><th>입력</th><th>실제 동작</th><th>상태</th><th>사람 수</th><th>요청 시각</th><th></th></tr></thead>
+      <thead><tr><th>입력 방식</th><th>작업 (완료 / 실패)</th><th>평균 Confidence</th><th>판단 불확실</th><th>평균 처리 시간</th><th>실제 동작과 일치</th></tr></thead>
+      <tbody id="compare-body">
+        {% for row in comparison %}
+          <tr>
+            <td><strong>{{ row.input_type_display }}</strong></td>
+            <td>{{ row.total }}건 <span class="muted">({{ row.success }} / {{ row.failure }})</span></td>
+            <td class="mono">{% if row.avg_confidence is not None %}{{ row.avg_confidence|floatformat:2 }}{% else %}-{% endif %}</td>
+            <td>{% if row.predicted %}{{ row.uncertain }} / {{ row.predicted }}{% else %}-{% endif %}</td>
+            <td>{% if row.avg_processing_ms %}{{ row.avg_processing_ms|floatformat:"0g" }} ms{% else %}-{% endif %}</td>
+            <td>{% if row.expected_count %}{{ row.matched }} / {{ row.expected_count }}{% else %}<span class="muted">동작 선택 없음</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="note">대표 예측 = 작업마다 Confidence가 가장 높은 사람의 예측. 두 입력은 촬영 거리·길이·사람·조명이 다를 수 있어서, 이 숫자만으로 어느 입력이 더 정확하다고 판단하지 마세요.</p>
+</section>
+
+<!-- ④ 최근 이력 -->
+<section class="card">
+  <h2 class="card-title"><span class="step-no">4</span>최근 분석 이력</h2>
+  <div class="table-scroll">
+    <table class="table">
+      <thead><tr><th>#</th><th>제목</th><th>입력</th><th>실제 동작</th><th>예측 (대표)</th><th>Confidence</th><th>처리 시간</th><th>상태</th><th>사람 수</th><th>요청 시각</th><th></th></tr></thead>
       <tbody id="recent-body">
         {% for job in recent_jobs %}
+          {% with top=job.top_prediction %}
           <tr>
             <td class="mono">{{ job.id }}</td>
             <td>{{ job.title }}</td>
             <td>{{ job.get_input_type_display }}</td>
             <td>{{ job.get_expected_action_display|default:"-" }}</td>
+            <td>{% if top %}{{ top.get_action_label_display }}{% if top.is_uncertain %} <span class="badge badge-warn">불확실</span>{% endif %}{% else %}-{% endif %}</td>
+            <td class="mono">{% if top %}{{ top.confidence|floatformat:2 }}{% else %}-{% endif %}</td>
+            <td>{% if job.processing_ms %}{{ job.processing_ms|floatformat:"0g" }} ms{% else %}-{% endif %}</td>
             <td><span class="badge status-{{ job.status }}">{{ job.get_status_display }}</span></td>
-            <td>{{ job.people }}</td>
+            <td>{{ job.predictions.all|length }}</td>
             <td class="muted">{{ job.created_at|date:"m-d H:i" }}</td>
             <td><a href="{% url 'analyses:detail' job.id %}">상세</a></td>
           </tr>
+          {% endwith %}
         {% empty %}
-          <tr><td colspan="8" class="muted center">아직 분석 기록이 없습니다.</td></tr>
+          <tr><td colspan="11" class="muted center">아직 분석 기록이 없습니다.</td></tr>
         {% endfor %}
       </tbody>
     </table>

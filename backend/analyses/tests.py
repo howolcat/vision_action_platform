@@ -348,3 +348,69 @@ class PlaybackCopyTests(TestCase):
         self.assertTrue(job.video.name.endswith(f"job_{job.id}.webm"))
         self.assertTrue(Path(job.video.path).exists())
         self.assertFalse(Path(job.video.path).with_suffix(".mp4").exists())   # mp4v 원본은 정리
+
+
+# ---------- 입력 방식 비교 (과제 9-1) + 대표 예측 ----------
+class ComparisonTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("cmp_user", password="pw-C-2026!")
+        other = User.objects.create_user("cmp_other", password="pw-O-2026!")
+        up = AnalysisJob.objects.create(user=self.user, title="up", input_type="UPLOAD", status="SUCCESS",
+                                        expected_action="wave", processing_ms=4000)
+        PersonPrediction.objects.create(job=up, track_id=1, action_label="wave", confidence=0.64, valid_frames=126)
+        PersonPrediction.objects.create(job=up, track_id=2, action_label="sit_stand", confidence=0.31,
+                                        is_uncertain=True, valid_frames=80)
+        cam = AnalysisJob.objects.create(user=self.user, title="cam", input_type="WEBCAM", status="SUCCESS",
+                                         expected_action="wave", processing_ms=8000)
+        PersonPrediction.objects.create(job=cam, track_id=1, action_label="drink_return", confidence=0.30,
+                                        is_uncertain=True, valid_frames=250)
+        AnalysisJob.objects.create(user=self.user, title="fail", input_type="UPLOAD", status="FAILURE")
+        other_job = AnalysisJob.objects.create(user=other, title="남의 것", input_type="WEBCAM", status="SUCCESS")
+        PersonPrediction.objects.create(job=other_job, track_id=1, action_label="wave", confidence=0.9, valid_frames=10)
+        self.client.force_login(self.user)
+
+    def test_top_prediction_is_highest_confidence(self):
+        job = AnalysisJob.objects.get(title="up")
+        self.assertEqual(job.top_prediction.action_label, "wave")
+        data = self.client.get(reverse("analyses:analysis-detail", args=[job.id])).json()
+        self.assertEqual(data["top_prediction"]["action_label"], "wave")
+
+    def test_comparison_api_counts_only_my_jobs(self):
+        rows = {r["input_type"]: r for r in self.client.get(reverse("analyses:analysis-comparison")).json()}
+        upload, webcam = rows["UPLOAD"], rows["WEBCAM"]
+        self.assertEqual((upload["total"], upload["success"], upload["failure"]), (2, 1, 1))
+        self.assertEqual(upload["avg_confidence"], 0.64)                # 대표 예측 기준
+        self.assertEqual((upload["matched"], upload["expected_count"]), (1, 1))
+        self.assertEqual(upload["avg_processing_ms"], 4000)
+        self.assertEqual(webcam["total"], 1)                             # 다른 사용자 작업은 제외
+        self.assertEqual((webcam["matched"], webcam["uncertain"]), (0, 1))
+
+    def test_index_shows_comparison_and_prediction_columns(self):
+        html = self.client.get(reverse("analyses:index")).content.decode()
+        self.assertIn("입력 방식 비교", html)
+        self.assertIn("예측 (대표)", html)
+        self.assertIn("4,000 ms", html)
+
+
+# ---------- 로컬 즉시 실행 모드: create 응답이 실제 상태(SUCCESS)로 나가는지 ----------
+from django.test import TransactionTestCase   # noqa: E402  (on_commit이 실제 커밋 시점에 바로 실행되도록)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class EagerCreateResponseTests(TransactionTestCase):
+    def test_create_response_reflects_finished_job(self):
+        user = User.objects.create_user("eager_user", password="pw-E-2026!")
+        self.client.force_login(user)
+
+        def run_now(args, task_id):          # Celery 즉시 실행 모드 흉내
+            run_analysis.apply(args=args, task_id=task_id)
+
+        with mock.patch("analyses.views.run_analysis.apply_async", side_effect=run_now), \
+             mock.patch("analyses.tasks.request_prediction", return_value=FAKE_RESULT):
+            response = self.client.post(
+                reverse("analyses:analysis-list"),
+                {"input_type": "UPLOAD", "video": fake_video()},
+            )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["status"], "SUCCESS")          # refresh_from_db 전에는 PENDING이었음
+        self.assertEqual(len(response.json()["predictions"]), 2)
