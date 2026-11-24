@@ -362,7 +362,7 @@ AI 서버(FastAPI)가 꺼진 상태에서 `wave.mp4` 업로드 → 작업은 멈
 | T07 CRUD 권한 | A가 B의 작업 조회·수정·삭제 → 404 | ✅ (자동 테스트) |
 | T08 관리자 | 관리자만 `/dashboard/` 접근 | ✅ (자동 테스트) |
 | T09 예외 처리 | 잘못된 파일·카메라 끊김 → FAILURE + 메시지 | ✅ (자동 테스트) |
-| T10 Docker | `docker compose restart` 후 데이터 유지 | ⬜ 시연 전 확인 |
+| T10 Docker | `docker compose restart` 후 데이터 유지 | ✅ (재시작 후 작업·계정 유지) |
 
 ### 오류 해결 기록
 
