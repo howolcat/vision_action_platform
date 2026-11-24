@@ -133,12 +133,22 @@ function initIndexPage() {
       liveBadge.hidden = true;
     }
 
-    img.addEventListener("load", () => { statusText.hidden = true; liveBadge.hidden = false; });
+    let retryTimer = null;
+    let failCount = 0;
+
+    img.addEventListener("load", () => { failCount = 0; statusText.hidden = true; liveBadge.hidden = false; });
+    // 처음 연결이 실패하면(서버 502) 3초 뒤 자동으로 다시 시도
+    // (연결된 뒤에 끊기는 경우는 서버가 알아서 재연결하고 "reconnecting" 화면을 보내 줌)
     img.addEventListener("error", () => {
       if (!active) return;
       disconnect();
+      failCount += 1;
       statusText.hidden = false;
-      statusText.textContent = "미리보기를 불러올 수 없습니다. 휴대폰의 IP Webcam 서버와 같은 Wi-Fi인지 확인하세요.";
+      statusText.textContent = failCount >= 3
+        ? "카메라에 연결할 수 없습니다. 휴대폰의 IP Webcam 서버가 켜져 있는지, 같은 Wi-Fi인지 확인하세요. (계속 다시 시도 중…)"
+        : "카메라 연결 중… 잠시 후 다시 시도합니다.";
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => { if (active) show(); }, 3000);
     });
     select.addEventListener("change", () => { if (active) show(); });
     // 브라우저 탭을 다른 곳으로 옮기면 잠시 끊고, 돌아오면 다시 연결
@@ -155,6 +165,7 @@ function initIndexPage() {
     }
     function hide() {
       active = false;
+      clearTimeout(retryTimer);
       disconnect();
     }
 

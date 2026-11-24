@@ -252,18 +252,33 @@ class CameraPreviewTests(TestCase):
 
     def test_relays_camera_stream_without_exposing_url(self):
         upstream = mock.MagicMock()
-        upstream.headers = {"Content-Type": "multipart/x-mixed-replace;boundary=frame"}
-        upstream.iter_content.return_value = [b"--frame\r\n", b"\xff\xd8jpeg\xff\xd9\r\n"]
+        # 카메라가 보내는 MJPEG 바이트 (JPEG가 두 조각에 걸쳐 도착하는 경우까지)
+        upstream.iter_content.return_value = [b"--cam\r\nContent-Type: image/jpeg\r\n\r\n\xff\xd8jpeg-", b"data\xff\xd9\r\n"]
         self.client.force_login(self.user)
         with mock.patch("analyses.camera_preview.requests.Session.get", return_value=upstream) as get:
             response = self.client.get(self.url)
-            body = b"".join(response.streaming_content)
+            first_part = next(iter(response.streaming_content))
+            response.close()   # 브라우저가 탭을 닫은 상황
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(response["Content-Type"].startswith("multipart/x-mixed-replace"))
-        self.assertIn(b"jpeg", body)
-        get.assert_called_once()
+        self.assertEqual(response["Content-Type"], "multipart/x-mixed-replace; boundary=frame")
+        self.assertTrue(first_part.startswith(b"--frame"))
+        self.assertIn(b"\xff\xd8jpeg-data\xff\xd9", first_part)                 # 조각난 JPEG를 한 장으로 복원
         self.assertEqual(get.call_args.args[0], "http://192.0.2.10:8080/video")   # 서버만 실제 주소를 앎
-        upstream.close.assert_called_once()                                   # 끝나면 카메라 연결 정리
+        upstream.close.assert_called()                                        # 끝나면 카메라 연결 정리
+
+    def test_reconnecting_frame_when_camera_stream_drops(self):
+        import requests as http
+        upstream = mock.MagicMock()
+        upstream.iter_content.return_value = []            # 연결 직후 스트림이 끊김 (휴대폰 회전 등)
+        self.client.force_login(self.user)
+        with mock.patch("analyses.camera_preview.requests.Session.get",
+                        side_effect=[upstream, http.ConnectionError()]), \
+             mock.patch("analyses.camera_preview.time.sleep"):
+            response = self.client.get(self.url)
+            part = next(iter(response.streaming_content))
+            response.close()
+        self.assertTrue(part.startswith(b"--frame"))
+        self.assertIn(b"\xff\xd8", part)                  # "다시 연결 중" 안내 JPEG를 보냄 (화면이 멈추지 않음)
 
     def test_camera_down_returns_502(self):
         import requests as http
@@ -277,3 +292,59 @@ class CameraPreviewTests(TestCase):
         html = self.client.get(reverse("analyses:index")).content.decode()
         self.assertIn('id="camera-preview"', html)
         self.assertNotIn("192.0.2.10", html)
+
+
+# ---------- IP Webcam 수집 영상 → 브라우저 재생용 WebM ----------
+def _write_mp4v(path, frames=20, size=(320, 240)):
+    import cv2
+    import numpy as np
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 15, size)
+    for i in range(frames):
+        writer.write(np.full((size[1], size[0], 3), i * 10 % 255, np.uint8))
+    writer.release()
+
+
+@override_settings(IP_WEBCAM_SOURCES={"phone1": "http://192.0.2.10:8080/video"})
+class PlaybackCopyTests(TestCase):
+    def setUp(self):
+        # 이 테스트 전용 임시 폴더 (다른 테스트가 공용 폴더를 지워도 영향 없게)
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, True)
+        override = self.settings(MEDIA_ROOT=self.media)
+        override.enable()
+        self.addCleanup(override.disable)
+
+    def test_make_playback_copy_creates_webm(self):
+        import cv2
+        from pathlib import Path
+        from .video_playback import make_playback_copy
+        src = Path(self.media) / "copy_test.mp4"
+        _write_mp4v(src, frames=20, size=(640, 480))
+        out = make_playback_copy(src, fps=30)
+        self.assertEqual(out.suffix, ".webm")
+        capture = cv2.VideoCapture(str(out))
+        self.assertEqual(int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), 480)   # 재생용은 가로 480으로 축소
+        count = 0
+        while capture.read()[0]:
+            count += 1
+        self.assertEqual(count, 20)
+
+    def test_webcam_task_attaches_webm_and_removes_mp4(self):
+        from pathlib import Path
+        user = User.objects.create_user("webcam_user", password="pw-W-2026!")
+        job = AnalysisJob.objects.create(user=user, title="웹캠", input_type="WEBCAM",
+                                         camera_name="phone1", capture_seconds=8)
+
+        def fake_capture(url, seconds, output_path, timeout_ms):
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            _write_mp4v(output_path, frames=40)
+            return {"frames": 40, "elapsed_seconds": 8.0, "path": str(output_path)}
+
+        with mock.patch("analyses.tasks.capture_clip", side_effect=fake_capture), \
+             mock.patch("analyses.tasks.request_prediction", return_value=FAKE_RESULT):
+            run_analysis.apply(args=[job.id])
+        job.refresh_from_db()
+        self.assertEqual(job.status, "SUCCESS")
+        self.assertTrue(job.video.name.endswith(f"job_{job.id}.webm"))
+        self.assertTrue(Path(job.video.path).exists())
+        self.assertFalse(Path(job.video.path).with_suffix(".mp4").exists())   # mp4v 원본은 정리
